@@ -1,0 +1,116 @@
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LogisticRegression
+import joblib
+import tarfile
+import boto3
+import sagemaker
+from sagemaker.sklearn.model import SKLearnModel
+
+bucket = "fatpractice2104"
+key = "models/model.tar.gz"
+
+data = pd.read_csv(f"s3://{bucket}/diabetes.csv")
+
+X = data[['Glucose','Insulin','BMI']]
+y = data['Outcome']
+
+model = LogisticRegression().fit(X, y)
+
+joblib.dump(model, "model.joblib")
+
+with tarfile.open("model.tar.gz", "w:gz") as tar:
+    tar.add("model.joblib")
+
+boto3.client("s3").upload_file("model.tar.gz", bucket, key)
+
+session = sagemaker.Session(default_bucket=bucket)
+role = sagemaker.get_execution_role()
+
+sk_model = SKLearnModel(
+    model_data=f"s3://{bucket}/{key}",
+    role=role,
+    entry_point="cinference.py",
+    framework_version="1.2-1",
+    sagemaker_session=session
+)
+
+predictor = sk_model.deploy(
+    instance_type="ml.m5.large",
+    initial_instance_count=1
+)
+
+print(predictor.predict([137, 168, 43.1])) 
+# print(predictor.predict([[230.1, 37.8, 69.2]]))
+
+
+# import json
+# import boto3
+
+# runtime = boto3.client("sagemaker-runtime")
+
+# ENDPOINT_NAME = "sagemaker-scikit-learn-2026-04-20-16-47-24-546"
+
+# def lambda_handler(event, context):
+
+#     if "body" in event:
+#         body = json.loads(event["body"])
+#     else:
+#         body = event
+
+#     values = body["values"]  
+
+#     payload = ",".join(map(str, values))
+
+#     response = runtime.invoke_endpoint(
+#         EndpointName=ENDPOINT_NAME,
+#         ContentType="text/csv",
+#         Body=payload
+#     )
+
+#     result = response["Body"].read().decode()
+
+#     return {
+#         "statusCode": 200,
+#         "body": json.dumps({
+#             "prediction": result
+#         })
+#     }
+
+
+# import joblib
+# import numpy as np
+
+# def model_fn(model_dir):
+#     model = joblib.load(f"{model_dir}/model.joblib")
+#     return model
+
+# def predict_fn(input_data, model):
+#     prediction = model.predict([input_data])
+#     return prediction.tolist()
+
+
+
+
+
+# AmazonSageMakerServiceCatalogProductsUseRole
+# sagemaker-executionrole-xxxx
+
+
+# {
+#  "Version": "2012-10-17",
+#  "Statement": [
+#   {
+#    "Effect": "Allow",
+#    "Action": [
+#      "s3:GetObject",
+#      "s3:PutObject",
+#      "s3:ListBucket"
+#    ],
+#    "Resource": [
+#      "arn:aws:s3:::fatpractice2104",
+#      "arn:aws:s3:::fatpractice2104/*"
+#    ]
+#   }
+#  ]
+# }
